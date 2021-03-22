@@ -72,7 +72,7 @@ class AttributedStringFactory: NSObject {
     private let fontSize: CGFloat
     private var attributes: [CSAttributeType] = []
     private let attributedString = NSMutableAttributedString()
-    private var completion: (_ result: Result<NSMutableAttributedString, XMLFontError>) -> Void
+    private var completion: ((_ result: Result<NSMutableAttributedString, XMLFontError>) -> Void)?
 
     private lazy var parser: XMLParser = {
         let parser = XMLParser(data: self.htmlString.data(using: .utf8)!)
@@ -183,19 +183,25 @@ class AttributedStringFactory: NSObject {
         }
     }
     
+    private func completionClosure(result: Result<NSMutableAttributedString, XMLFontError>) {
+        self.completion?(result)
+        self.completion = nil
+    }
+    
     deinit {
         print("AttributedStringFactory deinit")
     }
 }
 
 extension AttributedStringFactory: XMLParserDelegate {
+    
     public func parserDidStartDocument(_ parser: XMLParser) {
         attributes.removeAll()
         attributedString.deleteCharacters(in: NSRange(location: 0, length: attributedString.length))
     }
 
     public func parserDidEndDocument(_ parser: XMLParser) {
-        self.completion(.success(self.attributedString))
+        completionClosure(result: .success(self.attributedString))
     }
 
     public func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String]) {
@@ -207,7 +213,8 @@ extension AttributedStringFactory: XMLParserDelegate {
             self.attributes.append(.italic)
 
         case "SPAN":
-            guard let styleString = attributeDict["style"] else { break }
+            let spanAttributed = attributeDict.reduce(into: [:], { $0[$1.key.lowercased()] = $1.value })
+            guard let styleString = spanAttributed["style"] else { break }
 
             var attrs: [String: String] = [:]
 
@@ -229,7 +236,8 @@ extension AttributedStringFactory: XMLParserDelegate {
             }
 
         case "FONT":
-            self.attributes.append(.font(face: attributeDict["face"], size: cgFlotFromString(str: attributeDict["size"]), color: attributeDict["color"]))
+            let fontAttributed = attributeDict.reduce(into: [:], { $0[$1.key.lowercased()] = $1.value })
+            self.attributes.append(.font(face: fontAttributed["face"], size: cgFlotFromString(str: fontAttributed["size"]), color: fontAttributed["color"]))
         case "CENTER":
             self.attributes.append(.alignment(.center))
 
@@ -366,6 +374,6 @@ extension AttributedStringFactory: XMLParserDelegate {
 
     public func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
         print("html parser occured an error : " + parseError.localizedDescription)
-        self.completion(.failure(.parseError(originString)))
+        completionClosure(result: .failure(.parseError(originString)))
     }
 }
